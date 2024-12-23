@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Anthropic Billing Tracker",
+  "version": "1.0.0",
+  "description": "Monitors Anthropic billing balance and sends alerts to Slack.",
+  "permissions": ["alarms", "tabs", "scripting", "storage", "notifications"],
+  "host_permissions": [
+    "https://console.anthropic.com/*",
+    "https://hooks.slack.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://console.anthropic.com/settings/billing*"],
+      "js": ["content-billing.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Anthropic Billing Tracker",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
