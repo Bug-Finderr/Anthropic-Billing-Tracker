@@ -1,16 +1,18 @@
 const ALARM_NAME = "scrapeAnthropicBilling";
 const ANTHROPIC_BILLING_URL = "https://console.anthropic.com/settings/billing";
 
+let sortedBalanceThresholds = [];
+
 // Listen for the alarm
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === ALARM_NAME) {
     console.log("Alarm triggered: Scraping Anthropic billing data...");
-    scrapeAndSendData();
+    scrapeAndHandleData();
   }
 });
 
-// Function to scrape data and send to Slack
-function scrapeAndSendData() {
+// Function to scrape data and handle Slack notifications
+function scrapeAndHandleData() {
   // Retrieve Slack Webhook URL and Balance Thresholds from storage
   chrome.storage.local.get(
     ["slackWebhookUrl", "balanceThresholds"],
@@ -19,17 +21,14 @@ function scrapeAndSendData() {
       const balanceThresholds = result.balanceThresholds;
 
       if (!balanceThresholds || balanceThresholds.length === 0) {
-        console.warn("No balance thresholds set. Scraping is skipped.");
-        return;
-      }
-
-      if (!SLACK_WEBHOOK_URL) {
         console.warn(
-          "Slack Webhook URL not set. Please configure it in the popup."
+          "No balance thresholds set. Using default 60 minutes interval."
         );
-        // Still proceed to scrape and log the balance
-        scrapeBalanceAndLog();
-        return;
+      } else {
+        // Sort and store thresholds once
+        sortedBalanceThresholds = [...balanceThresholds].sort(
+          (a, b) => a.limit - b.limit
+        );
       }
 
       chrome.tabs.create(
@@ -38,20 +37,16 @@ function scrapeAndSendData() {
           console.log(`Opened tab (ID: ${tab.id}) to scrape billing data.`);
 
           // Listener for messages from content script
-          chrome.runtime.onMessage.addListener(function messageListener(
-            request,
-            sender,
-            sendResponse
-          ) {
+          const messageListener = (request, sender, sendResponse) => {
             if (request.action === "billingDataScraped") {
               console.log(
-                "Billing data received from content script:",
+                "Billing data received from content script: ",
                 request.data
               );
               chrome.runtime.onMessage.removeListener(messageListener);
-              chrome.tabs.remove(tab.id, () => {
-                console.log(`Closed tab (ID: ${tab.id}).`);
-              });
+              chrome.tabs.remove(tab.id, () =>
+                console.log(`Closed tab (ID: ${tab.id}).`)
+              );
 
               const balance = request.data.creditBalance; // Format (string): "US$123.45"
               const remainingBalance = Number(
@@ -62,20 +57,21 @@ function scrapeAndSendData() {
                 console.warn(
                   `Parsed balance is NaN. Received raw balance: "${balance}"`
                 );
-                sendToSlack(
-                  SLACK_WEBHOOK_URL,
-                  `🚨 *Anthropic Billing Tracker Error*\n\n` +
-                    `Unable to parse balance value.\n` +
-                    `• Raw balance received: \`${balance}\`\n` +
-                    `• Time: \`${new Date().toLocaleString()}\`\n` +
-                    `• Please check your balance and update the extension settings.`
-                );
+                if (SLACK_WEBHOOK_URL) {
+                  sendToSlack(
+                    SLACK_WEBHOOK_URL,
+                    `:alert: *Anthropic Billing Tracker Error*\n\n` +
+                      `Unable to parse balance value.\n` +
+                      `• Raw balance received: \`${balance}\`\n` +
+                      `• Time: \`${new Date().toLocaleString()}\`\n` +
+                      `• Please check your balance and update the extension settings.`
+                  );
+                }
                 return;
               }
 
               console.log(`Remaining Balance: ${balance}`);
 
-              // Update storage with the latest balance and scrape info
               const currentTime = Date.now();
               const logEntry = {
                 sno: currentTime, // Using timestamp as serial number
@@ -83,20 +79,18 @@ function scrapeAndSendData() {
                 timestamp: new Date(currentTime).toLocaleString(),
               };
 
-              // Retrieve existing logs
+              // Update scrape logs
               chrome.storage.local.get(["scrapeLogs"], (res) => {
                 let logs = res.scrapeLogs || [];
                 logs.push(logEntry);
 
                 // Maintain only the latest 100 logs
-                if (logs.length > 100) {
-                  logs = logs.slice(-100);
-                }
+                if (logs.length > 100) logs = logs.slice(-100);
 
                 chrome.storage.local.set({ scrapeLogs: logs }, () => {
                   console.log("Scrape log updated.");
-                  // Notify popup or options page to refresh
-                  notifyExtension();
+                  // Notify extension once after all updates
+                  updateAndNotify();
                 });
               });
 
@@ -110,18 +104,13 @@ function scrapeAndSendData() {
                   console.log(
                     `Last scrape information updated. Timestamp: ${currentTime}`
                   );
-                  // Send notification to popup or options page to refresh
-                  notifyExtension();
+                  // Notify extension once after all updates
+                  updateAndNotify();
                 }
               );
 
               // Determine next scrape interval based on balance
-              const nextInterval = determineNextInterval(
-                remainingBalance,
-                balanceThresholds
-              );
-
-              // Calculate expected next scrape time
+              const nextInterval = determineNextInterval(remainingBalance);
               const expectedNextScrapeTime = new Date(
                 currentTime + nextInterval * 60000
               ).toLocaleString();
@@ -135,165 +124,56 @@ function scrapeAndSendData() {
                   console.log(
                     `Next scrape info updated. Timestamp: ${currentTime}`
                   );
-                  // Notify popup or options page to refresh
-                  notifyExtension();
+                  // Notify extension once after all updates
+                  updateAndNotify();
                 }
               );
 
               // Send alert if applicable
-              checkAndNotify(
-                remainingBalance,
-                SLACK_WEBHOOK_URL,
-                balanceThresholds
-              );
+              if (SLACK_WEBHOOK_URL)
+                checkAndNotify(remainingBalance, SLACK_WEBHOOK_URL);
+              else
+                console.warn("No Slack Webhook URL found. Alerting skipped.");
 
               // Set the next alarm
               setAlarm(nextInterval);
             }
-          });
+          };
+
+          chrome.runtime.onMessage.addListener(messageListener);
         }
       );
     }
   );
 }
 
-// Function to scrape balance and log to console when Slack webhook is not set
-function scrapeBalanceAndLog() {
-  // Retrieve Balance Thresholds from storage
-  chrome.storage.local.get(["balanceThresholds"], (result) => {
-    const balanceThresholds = result.balanceThresholds;
-
-    if (!balanceThresholds || balanceThresholds.length === 0) {
-      console.warn("No balance thresholds set. Scraping is skipped.");
-      return;
-    }
-
-    chrome.tabs.create({ url: ANTHROPIC_BILLING_URL, active: false }, (tab) => {
-      console.log(`Opened tab (ID: ${tab.id}) to scrape billing data.`);
-
-      // Listener for messages from content script
-      chrome.runtime.onMessage.addListener(function messageListener(
-        request,
-        sender,
-        sendResponse
-      ) {
-        if (request.action === "billingDataScraped") {
-          console.log(
-            "Billing data received from content script:",
-            request.data
-          );
-          chrome.runtime.onMessage.removeListener(messageListener);
-          chrome.tabs.remove(tab.id, () => {
-            console.log(`Closed tab (ID: ${tab.id}).`);
-          });
-
-          const balance = request.data.creditBalance;
-          const balance_integer = Number(balance.replace(/[$,]/g, "")).toFixed(
-            2
-          );
-
-          if (isNaN(balance_integer)) {
-            console.warn(
-              `Parsed balance is NaN. Received raw balance: "${balance}"`
-            );
-            return;
-          }
-
-          console.log(`Remaining Balance: ${balance}`);
-
-          // Update storage with the latest balance and scrape info
-          const currentTime = Date.now();
-          const logEntry = {
-            sno: currentTime, // Using timestamp as serial number
-            balance: `$${balance_integer}`,
-            timestamp: new Date(currentTime).toLocaleString(),
-          };
-
-          // Retrieve existing logs
-          chrome.storage.local.get(["scrapeLogs"], (res) => {
-            let logs = res.scrapeLogs || [];
-            logs.push(logEntry);
-
-            // Maintain only the latest 100 logs
-            if (logs.length > 100) logs = logs.slice(-100);
-
-            chrome.storage.local.set({ scrapeLogs: logs }, () => {
-              console.log("Scrape log updated.");
-              // Notify popup or options page to refresh
-              notifyExtension();
-            });
-          });
-
-          // Update last scrape info
-          chrome.storage.local.set(
-            {
-              lastBalance: balance_integer,
-              lastScrapeTime: currentTime,
-            },
-            () => {
-              console.log("Last scrape info updated.");
-              // Notify popup or options page to refresh
-              notifyExtension();
-            }
-          );
-
-          // Determine next scrape interval based on balance
-          const nextInterval = determineNextInterval(
-            balance_integer,
-            balanceThresholds
-          );
-
-          // Calculate expected next scrape time
-          const expectedNextScrapeTime = new Date(
-            currentTime + nextInterval * 60000
-          ).toLocaleString();
-
-          chrome.storage.local.set(
-            {
-              nextScrapeInterval: nextInterval,
-              nextScrapeTime: expectedNextScrapeTime,
-            },
-            () => {
-              console.log("Next scrape info updated.");
-              // Notify popup or options page to refresh
-              notifyExtension();
-            }
-          );
-
-          // Set the next alarm
-          setAlarm(nextInterval);
-        }
-      });
-    });
-  });
-}
-
-// Function to determine next scrape interval based on balance and thresholds
-function determineNextInterval(balance, balanceThresholds) {
-  // Sort thresholds ascending by limit
-  const sortedThresholds = [...balanceThresholds].sort(
-    (a, b) => a.limit - b.limit
-  );
-
-  for (let threshold of sortedThresholds) {
+// Function to determine next scrape interval based on balance and pre-sorted thresholds
+function determineNextInterval(balance) {
+  for (let threshold of sortedBalanceThresholds) {
     if (balance <= threshold.limit) return threshold.interval;
   }
-
   return 60; // Default to 60 minutes if no threshold matched
 }
 
-// Function to check balance against thresholds and notify
-function checkAndNotify(balance, webhookUrl, balanceThresholds) {
-  // Sort thresholds ascending by limit
-  const sortedThresholds = [...balanceThresholds].sort(
-    (a, b) => a.limit - b.limit
-  );
+// Function to check balance against thresholds and notify Slack
+function checkAndNotify(balance, webhookUrl) {
+  if (sortedBalanceThresholds.length === 0) {
+    const msg =
+      `:warning: *Anthropic Billing Tracker Warning*\n\n` +
+      `No balance thresholds are configured.\n` +
+      `• Current Balance: \`$${balance}\`\n` +
+      `• Time: \`${new Date().toLocaleString()}\`\n` +
+      `• Default interval: \`60 minutes\`\n\n` +
+      `_Please configure thresholds in the extension settings._`;
+    sendToSlack(webhookUrl, msg);
+    return;
+  }
 
-  for (let threshold of sortedThresholds) {
+  for (let threshold of sortedBalanceThresholds) {
     if (balance <= threshold.limit) {
       // Send alert
       const msg =
-        `🚨 *Anthropic Billing Alert*\n\n` +
+        `:alert: *Anthropic Billing Alert*\n\n` +
         `Your credit balance is running low!\n\n` +
         `• Current Balance: \`$${balance}\`\n` +
         `• Time: \`${new Date().toLocaleString()}\`\n\n` +
@@ -302,7 +182,6 @@ function checkAndNotify(balance, webhookUrl, balanceThresholds) {
       console.log(
         `Alert sent for threshold: $${threshold.limit}\nBalance: ${balance}`
       );
-
       // Exit after handling the first matching threshold
       return;
     }
@@ -342,6 +221,13 @@ function sendToSlack(webhookUrl, message) {
     });
 }
 
+// Function to update and notify extension
+function updateAndNotify() {
+  // To prevent multiple notifications in quick succession, you might want to implement a debounce mechanism here.
+  // For simplicity, we'll call notifyExtension once after all updates.
+  notifyExtension();
+}
+
 // Function to notify popup and options page to refresh data
 function notifyExtension() {
   chrome.runtime.sendMessage({ action: "updateData" });
@@ -351,12 +237,12 @@ function notifyExtension() {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "manualScrape") {
     console.log("Manual scrape triggered.");
-    scrapeAndSendData();
+    scrapeAndHandleData();
     sendResponse({ status: "success" });
   }
 });
 
-// Initial msg after extension installation
+// Initial message after extension installation
 chrome.runtime.onInstalled.addListener(() => {
   console.log(
     "Anthropic Billing Tracker Extension Installed.\nPlease configure at least one balance threshold and click `Manual Scrape` in the popup to start scraping."

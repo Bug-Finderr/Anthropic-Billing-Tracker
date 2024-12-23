@@ -1,11 +1,16 @@
 body {
   font-family: Arial, sans-serif;
   padding: 20px;
+  background-color: #f9f9f9;
 }
 
 .container {
   max-width: 600px;
   margin: 0 auto;
+  background-color: white;
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
 }
 
 header {
@@ -24,8 +29,8 @@ h1 {
 }
 
 .logs-section {
-  max-height: 400px; /* Set a maximum height */
-  overflow-y: auto; /* Enable vertical scrolling */
+  max-height: 400px;
+  overflow-y: auto;
 }
 
 table {
@@ -34,7 +39,8 @@ table {
 }
 
 thead {
-  background-color: #f2f2f2;
+  background-color: #4caf50;
+  color: white;
   position: sticky;
   top: 0;
 }
@@ -47,16 +53,9 @@ td {
 }
 
 tr:nth-child(even) {
-  background-color: #f9f9f9;
+  background-color: #f2f2f2;
 }
 
 tr:hover {
   background-color: #ddd;
-}
-
-th {
-  padding-top: 12px;
-  padding-bottom: 12px;
-  background-color: #4caf50;
-  color: white;
 }

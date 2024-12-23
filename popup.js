@@ -30,21 +30,17 @@ document.addEventListener("DOMContentLoaded", () => {
   saveWebhookButton.addEventListener("click", () => {
     const webhookUrl = slackWebhookTextarea.value.trim();
     if (!webhookUrl) {
-      webhookStatus.textContent = "Webhook URL cannot be empty.";
-      webhookStatus.style.color = "red";
+      setStatus("Webhook URL cannot be empty.", "red");
       return;
     }
 
-    // Optional: Validate webhook URL format
     if (!isValidURL(webhookUrl)) {
-      webhookStatus.textContent = "Please enter a valid URL.";
-      webhookStatus.style.color = "red";
+      setStatus("Please enter a valid URL.", "red");
       return;
     }
 
     chrome.storage.local.set({ slackWebhookUrl: webhookUrl }, () => {
-      webhookStatus.textContent = "Webhook URL saved successfully!";
-      webhookStatus.style.color = "green";
+      setStatus("Webhook URL saved successfully!", "green");
       setTimeout(() => {
         webhookStatus.textContent = "";
       }, 3000);
@@ -59,6 +55,12 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (_) {
       return false;
     }
+  }
+
+  // Function to set status message
+  function setStatus(message, color) {
+    webhookStatus.textContent = message;
+    webhookStatus.style.color = color;
   }
 
   // Function to load and display thresholds
@@ -139,27 +141,21 @@ document.addEventListener("DOMContentLoaded", () => {
   manualScrapeButton.addEventListener("click", () => {
     chrome.storage.local.get(["balanceThresholds"], (result) => {
       const thresholds = result.balanceThresholds || [];
-      if (thresholds.length === 0) {
-        webhookStatus.textContent =
-          "Please add at least one balance threshold.";
-        webhookStatus.style.color = "red";
-        return;
-      }
+      if (thresholds.length === 0)
+        setStatus(
+          "No thresholds set. Using default 60 minutes interval.",
+          "yellow"
+        );
 
       chrome.runtime.sendMessage({ action: "manualScrape" }, (response) => {
         if (response && response.status === "success") {
-          webhookStatus.textContent = "Manual scrape triggered!";
-          webhookStatus.style.color = "green";
-          setTimeout(() => {
-            webhookStatus.textContent = "";
-          }, 3000);
+          setStatus("Manual scrape triggered!", "green");
         } else {
-          webhookStatus.textContent = "Manual scrape failed.";
-          webhookStatus.style.color = "red";
-          setTimeout(() => {
-            webhookStatus.textContent = "";
-          }, 3000);
+          setStatus("Manual scrape failed.", "red");
         }
+        setTimeout(() => {
+          webhookStatus.textContent = "";
+        }, 3000);
       });
     });
   });
@@ -228,16 +224,18 @@ document.addEventListener("DOMContentLoaded", () => {
         console.log("Balance thresholds updated.");
         thresholdForm.classList.add("hidden");
         loadThresholds();
-        // Optionally, notify background.js to re-calculate intervals
+        // Notify background.js to re-calculate intervals
         chrome.runtime.sendMessage({ action: "updateData" });
       });
     });
   });
 
-  // Edit and Delete button handlers
+  // Edit and Delete button handlers using event delegation
   thresholdsTableBody.addEventListener("click", (e) => {
-    if (e.target.classList.contains("edit-btn")) {
-      const index = parseInt(e.target.dataset.index);
+    const target = e.target;
+    const index = parseInt(target.dataset.index);
+
+    if (target.classList.contains("edit-btn")) {
       editThresholdIndex = index;
 
       chrome.storage.local.get(["balanceThresholds"], (result) => {
@@ -252,8 +250,7 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
 
-    if (e.target.classList.contains("delete-btn")) {
-      const index = parseInt(e.target.dataset.index);
+    if (target.classList.contains("delete-btn")) {
       if (confirm("Are you sure you want to delete this threshold?")) {
         chrome.storage.local.get(["balanceThresholds"], (result) => {
           let thresholds = result.balanceThresholds || [];
@@ -262,7 +259,7 @@ document.addEventListener("DOMContentLoaded", () => {
           chrome.storage.local.set({ balanceThresholds: thresholds }, () => {
             console.log("Balance threshold deleted.");
             loadThresholds();
-            // Optionally, notify background.js to re-calculate intervals
+            // Notify background.js to re-calculate intervals
             chrome.runtime.sendMessage({ action: "updateData" });
           });
         });

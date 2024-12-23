@@ -41,6 +41,7 @@ Welcome to **Anthropic Billing Tracker**! This Chrome extension monitors your An
 
 - **Real-Time Monitoring:** Continuously monitors your Anthropic billing balance.
 - **Customizable Thresholds:** Define multiple balance limits and corresponding alert intervals.
+- **Default Monitoring:** Automatically uses a 60-minute interval if no thresholds are set.
 - **Slack Integration:** Sends alerts directly to your Slack channel via Webhooks.
 - **Comprehensive Logs:** Keeps a log of all scraping actions accessible through the Options Page.
 - **User-Friendly Interface:** Easily configure settings through the Popup and manage logs via the Options Page.
@@ -133,6 +134,7 @@ To enable Slack notifications, you'll need to obtain a **Slack Webhook URL**. Fo
 1. **Navigate to Balance Thresholds:**
 
    - In the extension popup, locate the **"Balance Thresholds"** section.
+   - Note: If no thresholds are set, the extension will automatically use a 60-minute monitoring interval.
 
 2. **Add a New Threshold:**
 
@@ -163,7 +165,7 @@ To enable Slack notifications, you'll need to obtain a **Slack Webhook URL**. Fo
 
    - A success message will appear confirming that the manual scrape has been triggered.
 
-> **Note:** It's essential to **add at least one balance threshold** and **trigger a manual scrape** to start the monitoring process. The extension will not perform any scraping automatically until these steps are completed.
+> **Note:** While it's recommended to **add at least one balance threshold**, the extension will use a default 60-minute monitoring interval if no thresholds are configured. The extension begins monitoring after you **trigger a manual scrape**.
 
 ---
 

@@ -1,3 +1,4 @@
+// Function to scrape billing data from the page
 function scrapeBillingData() {
   const creditBalanceElement = document.querySelector(
     '[data-testid="credit-balance"] .text-text-000'
@@ -13,9 +14,8 @@ function scrapeBillingData() {
   }
 }
 
-// Function to wait until the balance is loaded
+// Function to wait until the balance is loaded with a timeout
 function waitForRealValue(callback, maxWaitTime = 20000) {
-  // 20 seconds timeout
   const startTime = Date.now();
 
   function checkValue() {
